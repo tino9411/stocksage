@@ -73,27 +73,16 @@ def get_stock_summary(stock_symbol):
             "50_day_ma": sma_50,
             "200_day_ma": sma_200,
             "rsi": rsi,
-            "return_on_equity": stock.financial_ratios.get('return_on_equity'),
-            "return_on_assets": stock.financial_ratios.get('return_on_assets'),
-            "profit_margin": stock.financial_ratios.get('profit_margin'),
-            "operating_margin": stock.financial_ratios.get('operating_margin'),
-            "price_to_book": stock.financial_ratios.get('price_to_book'),
-            "price_to_sales": stock.financial_ratios.get('price_to_sales'),
-            "peg_ratio": stock.financial_ratios.get('peg_ratio'),
-            "debt_to_equity": stock.financial_ratios.get('debt_to_equity'),
-            "current_ratio": stock.financial_ratios.get('current_ratio'),
-            "quick_ratio": stock.financial_ratios.get('quick_ratio'),
-            "free_cash_flow": stock.financial_ratios.get('free_cash_flow'),
-            "ebitda": stock.financial_ratios.get('ebitda'),
         }
 
-        if hasattr(stock, 'growth_rates'):
-            summary.update({
-                "earnings_growth": stock.growth_rates.get('earnings_growth'),
-                "revenue_growth": stock.growth_rates.get('revenue_growth'),
-            })
+        # Add financial ratios
+        summary.update(stock.financial_ratios)
 
-         # Add cash flow statement data to the summary
+        # Add growth rates
+        if hasattr(stock, 'growth_rates'):
+            summary.update(stock.growth_rates)
+
+        # Add cash flow statement data
         if stock.cash_flow_statements:
             latest_cash_flow = stock.cash_flow_statements[0]
             summary.update({
@@ -103,6 +92,72 @@ def get_stock_summary(stock_symbol):
                 "net_cash_provided_by_operating_activities": latest_cash_flow.netCashProvidedByOperatingActivities,
                 "net_cash_used_for_investing_activities": latest_cash_flow.netCashUsedForInvestingActivites,
                 "net_cash_used_provided_by_financing_activities": latest_cash_flow.netCashUsedProvidedByFinancingActivities,
+            })
+
+        # Add financial metrics
+        if stock.financial_metrics:
+            latest_metrics = stock.financial_metrics[0]
+            summary.update({
+                "financial_metrics_date": latest_metrics.date,
+                "financial_metrics_year": latest_metrics.calendarYear,
+                "financial_metrics_period": latest_metrics.period,
+                "revenue_per_share": latest_metrics.revenuePerShare,
+                "net_income_per_share": latest_metrics.netIncomePerShare,
+                "operating_cash_flow_per_share": latest_metrics.operatingCashFlowPerShare,
+                "free_cash_flow_per_share": latest_metrics.freeCashFlowPerShare,
+                "cash_per_share": latest_metrics.cashPerShare,
+                "book_value_per_share": latest_metrics.bookValuePerShare,
+                "tangible_book_value_per_share": latest_metrics.tangibleBookValuePerShare,
+                "shareholders_equity_per_share": latest_metrics.shareholdersEquityPerShare,
+                "interest_debt_per_share": latest_metrics.interestDebtPerShare,
+                "market_cap": latest_metrics.marketCap,
+                "enterprise_value": latest_metrics.enterpriseValue,
+                "pe_ratio": latest_metrics.peRatio,
+                "price_to_sales_ratio": latest_metrics.priceToSalesRatio,
+                "pocf_ratio": latest_metrics.pocfratio,
+                "pfcf_ratio": latest_metrics.pfcfRatio,
+                "pb_ratio": latest_metrics.pbRatio,
+                "ptb_ratio": latest_metrics.ptbRatio,
+                "ev_to_sales": latest_metrics.evToSales,
+                "enterprise_value_over_ebitda": latest_metrics.enterpriseValueOverEBITDA,
+                "ev_to_operating_cash_flow": latest_metrics.evToOperatingCashFlow,
+                "ev_to_free_cash_flow": latest_metrics.evToFreeCashFlow,
+                "earnings_yield": latest_metrics.earningsYield,
+                "free_cash_flow_yield": latest_metrics.freeCashFlowYield,
+                "debt_to_equity": latest_metrics.debtToEquity,
+                "debt_to_assets": latest_metrics.debtToAssets,
+                "net_debt_to_ebitda": latest_metrics.netDebtToEBITDA,
+                "current_ratio": latest_metrics.currentRatio,
+                "interest_coverage": latest_metrics.interestCoverage,
+                "income_quality": latest_metrics.incomeQuality,
+                "dividend_yield": latest_metrics.dividendYield,
+                "payout_ratio": latest_metrics.payoutRatio,
+                "sales_general_and_administrative_to_revenue": latest_metrics.salesGeneralAndAdministrativeToRevenue,
+                "research_and_development_to_revenue": latest_metrics.researchAndDdevelopementToRevenue,
+                "intangibles_to_total_assets": latest_metrics.intangiblesToTotalAssets,
+                "capex_to_operating_cash_flow": latest_metrics.capexToOperatingCashFlow,
+                "capex_to_revenue": latest_metrics.capexToRevenue,
+                "capex_to_depreciation": latest_metrics.capexToDepreciation,
+                "stock_based_compensation_to_revenue": latest_metrics.stockBasedCompensationToRevenue,
+                "graham_number": latest_metrics.grahamNumber,
+                "roic": latest_metrics.roic,
+                "return_on_tangible_assets": latest_metrics.returnOnTangibleAssets,
+                "graham_net_net": latest_metrics.grahamNetNet,
+                "working_capital": latest_metrics.workingCapital,
+                "tangible_asset_value": latest_metrics.tangibleAssetValue,
+                "net_current_asset_value": latest_metrics.netCurrentAssetValue,
+                "invested_capital": latest_metrics.investedCapital,
+                "average_receivables": latest_metrics.averageReceivables,
+                "average_payables": latest_metrics.averagePayables,
+                "average_inventory": latest_metrics.averageInventory,
+                "days_sales_outstanding": latest_metrics.daysSalesOutstanding,
+                "days_payables_outstanding": latest_metrics.daysPayablesOutstanding,
+                "days_of_inventory_on_hand": latest_metrics.daysOfInventoryOnHand,
+                "receivables_turnover": latest_metrics.receivablesTurnover,
+                "payables_turnover": latest_metrics.payablesTurnover,
+                "inventory_turnover": latest_metrics.inventoryTurnover,
+                "roe": latest_metrics.roe,
+                "capex_per_share": latest_metrics.capexPerShare
             })
 
         # Remove None values

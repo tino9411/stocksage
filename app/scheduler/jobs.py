@@ -7,7 +7,7 @@ def update_all_stocks():
     stocks = Stock.objects.all()
     for stock in stocks:
         try:
-            fetch_stock_data(stock.symbol)
+            fetch_stock_data(stock.symbol)  # This now includes fetching financial metrics
             logging.info(f"Updated data for {stock.symbol}")
         except Exception as e:
             logging.error(f"Failed to update {stock.symbol}: {str(e)}")

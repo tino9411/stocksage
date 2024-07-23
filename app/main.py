@@ -220,6 +220,23 @@ def get_cash_flow_statement(symbol):
         logging.error(f"Unexpected error getting cash flow statement for stock {symbol}: {str(e)}")
         return jsonify({"error": "An unexpected error occurred"}), 500
     
+@app.route('/api/financial_metrics/<symbol>')
+def get_financial_metrics(symbol):
+    try:
+        logging.info(f"Received request for financial metrics of {symbol}")
+        stock = fetch_stock_data(symbol)
+        if stock and stock.financial_metrics:
+            latest_metrics = stock.financial_metrics[0].to_mongo().to_dict()
+            latest_metrics['date'] = latest_metrics['date'].isoformat()
+            logging.info(f"Successfully retrieved financial metrics for {symbol}")
+            return jsonify(latest_metrics), 200
+        else:
+            logging.warning(f"Financial metrics not found for {symbol}")
+            return jsonify({"error": "Financial metrics not found or unable to retrieve data"}), 404
+    except Exception as e:
+        logging.error(f"Unexpected error getting financial metrics for stock {symbol}: {str(e)}")
+        return jsonify({"error": "An unexpected error occurred"}), 500
+    
     
 
 if __name__ == '__main__':
