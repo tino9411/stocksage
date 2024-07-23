@@ -2,7 +2,7 @@ from flask import Flask, jsonify, request
 from app.database.mongodb import initialize_db
 from app.data_processing.stock_analysis import get_stock_summary
 from app.scheduler.jobs import init_scheduler
-from app.data_retrieval.sec_scraper import get_10k_filing_info, get_10q_filing_info, get_10k_report, get_10q_report
+from app.data_retrieval.sec_scraper import SECScraper
 import logging
 from flask_cors import CORS
 
@@ -12,6 +12,9 @@ logging.basicConfig(level=logging.DEBUG)
 
 initialize_db()
 init_scheduler()
+
+# Initialize the SECScraper
+sec_scraper = SECScraper()
 
 @app.before_request
 def log_request_info():
@@ -58,11 +61,11 @@ def get_filing_info(symbol, filing_type, get_info_func):
 
 @app.route('/api/10k_filing/<symbol>')
 def get_10k_filing(symbol):
-    return get_filing_info(symbol, "10-K", get_10k_filing_info)
+    return get_filing_info(symbol, "10-K", sec_scraper.get_10k_filing_info)
 
 @app.route('/api/10q_filing/<symbol>')
 def get_10q_filing(symbol):
-    return get_filing_info(symbol, "10-Q", get_10q_filing_info)
+    return get_filing_info(symbol, "10-Q", sec_scraper.get_10q_filing_info)
 
 def get_filing_report(symbol, filing_type, get_report_func):
     try:
@@ -86,20 +89,20 @@ def get_filing_report(symbol, filing_type, get_report_func):
 
 @app.route('/api/10k_report/<symbol>')
 def get_10k_report_route(symbol):
-    return get_filing_report(symbol, "10-K", get_10k_report)
+    return get_filing_report(symbol, "10-K", sec_scraper.get_10k_report)
 
 @app.route('/api/10q_report/<symbol>')
 def get_10q_report_route(symbol):
-    return get_filing_report(symbol, "10-Q", get_10q_report)
+    return get_filing_report(symbol, "10-Q", sec_scraper.get_10q_report)
 
 @app.route('/api/full_report/<filing_type>/<symbol>')
 def get_full_report(filing_type, symbol):
     try:
         logging.info(f"Received request for full {filing_type} report of {symbol}")
         if filing_type == "10-K":
-            report = get_10k_report(symbol)
+            report = sec_scraper.get_10k_report(symbol)
         elif filing_type == "10-Q":
-            report = get_10q_report(symbol)
+            report = sec_scraper.get_10q_report(symbol)
         else:
             return jsonify({"error": "Invalid filing type"}), 400
 
