@@ -180,6 +180,27 @@ def get_income_statement(symbol):
         logging.error(f"Unexpected error getting income statement for stock {symbol}: {str(e)}")
         return jsonify({"error": "An unexpected error occurred"}), 500
 
+@app.route('/api/balance_sheet/<symbol>')
+def get_balance_sheet(symbol):
+    try:
+        logging.info(f"Received request for balance sheet of {symbol}")
+        stock = fetch_stock_data(symbol)
+        if stock and stock.balance_sheets:
+            balance_sheets = [sheet.to_mongo().to_dict() for sheet in stock.balance_sheets]
+            for sheet in balance_sheets:
+                sheet['date'] = sheet['date'].isoformat()
+                sheet['fillingDate'] = sheet['fillingDate'].isoformat()
+                sheet['acceptedDate'] = sheet['acceptedDate'].isoformat()
+            logging.info(f"Successfully retrieved balance sheet for {symbol}")
+            return jsonify(balance_sheets), 200
+        else:
+            logging.warning(f"Balance sheet not found for {symbol}")
+            return jsonify({"error": "Balance sheet not found or unable to retrieve data"}), 404
+    except Exception as e:
+        logging.error(f"Unexpected error getting balance sheet for stock {symbol}: {str(e)}")
+        return jsonify({"error": "An unexpected error occurred"}), 500
+    
+    
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

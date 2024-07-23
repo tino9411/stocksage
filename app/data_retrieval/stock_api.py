@@ -1,5 +1,5 @@
 import yfinance as yf
-from app.models.stock import Stock, HistoricalData, FinancialStatement
+from app.models.stock import Stock, HistoricalData, FinancialStatement, BalanceSheet
 from datetime import datetime, timezone, timedelta
 import logging
 import requests
@@ -91,6 +91,14 @@ def fetch_stock_data(symbol):
         stock_doc.last_updated = datetime.now(timezone.utc)
         stock_doc.save()
         
+         # Fetch and store balance sheet data
+        balance_sheets = fetch_balance_sheet(symbol)
+        if balance_sheets:
+            stock_doc.balance_sheets = balance_sheets
+
+        stock_doc.last_updated = datetime.now(timezone.utc)
+        stock_doc.save()
+        
         logging.info(f"Successfully updated data for {symbol}")
         logging.debug(f"Processed data for {symbol}: {stock_doc.to_json()}")
         return stock_doc
@@ -171,3 +179,93 @@ def fetch_income_statement(symbol):
     except Exception as e:
         logging.error(f"Unexpected error fetching income statement data for {symbol}: {str(e)}")
         return None
+
+def fetch_balance_sheet(symbol):
+    try:
+        stock = Stock.objects(symbol=symbol).first()
+        
+        # Check if we already have a recent balance sheet (e.g., less than 3 months old)
+        if stock and stock.balance_sheets:
+            latest_balance_sheet = stock.balance_sheets[0]
+            if (datetime.now(timezone.utc) - latest_balance_sheet.date).days < 90:
+                logging.info(f"Using cached balance sheet for {symbol}")
+                return stock.balance_sheets
+
+        # If no recent data, fetch from FMP API
+        url = f"{FMP_BASE_URL}/balance-sheet-statement/{symbol}?period=annual&apikey={FMP_API_KEY}"
+        response = requests.get(url)
+        response.raise_for_status()
+        data = response.json()
+
+        if not data:
+            logging.warning(f"No balance sheet data found for {symbol}")
+            return None
+
+        balance_sheets = []
+        for statement in data:
+            balance_sheet = BalanceSheet(
+                date=datetime.strptime(statement['date'], '%Y-%m-%d'),
+                symbol=statement['symbol'],
+                reportedCurrency=statement['reportedCurrency'],
+                cik=statement['cik'],
+                fillingDate=datetime.strptime(statement['fillingDate'], '%Y-%m-%d'),
+                acceptedDate=datetime.strptime(statement['acceptedDate'], '%Y-%m-%d %H:%M:%S'),
+                calendarYear=statement['calendarYear'],
+                period=statement['period'],
+                cashAndCashEquivalents=statement['cashAndCashEquivalents'],
+                shortTermInvestments=statement['shortTermInvestments'],
+                cashAndShortTermInvestments=statement['cashAndShortTermInvestments'],
+                netReceivables=statement['netReceivables'],
+                inventory=statement['inventory'],
+                otherCurrentAssets=statement['otherCurrentAssets'],
+                totalCurrentAssets=statement['totalCurrentAssets'],
+                propertyPlantEquipmentNet=statement['propertyPlantEquipmentNet'],
+                goodwill=statement['goodwill'],
+                intangibleAssets=statement['intangibleAssets'],
+                goodwillAndIntangibleAssets=statement['goodwillAndIntangibleAssets'],
+                longTermInvestments=statement['longTermInvestments'],
+                taxAssets=statement['taxAssets'],
+                otherNonCurrentAssets=statement['otherNonCurrentAssets'],
+                totalNonCurrentAssets=statement['totalNonCurrentAssets'],
+                otherAssets=statement['otherAssets'],
+                totalAssets=statement['totalAssets'],
+                accountPayables=statement['accountPayables'],
+                shortTermDebt=statement['shortTermDebt'],
+                taxPayables=statement['taxPayables'],
+                deferredRevenue=statement['deferredRevenue'],
+                otherCurrentLiabilities=statement['otherCurrentLiabilities'],
+                totalCurrentLiabilities=statement['totalCurrentLiabilities'],
+                longTermDebt=statement['longTermDebt'],
+                deferredRevenueNonCurrent=statement['deferredRevenueNonCurrent'],
+                deferredTaxLiabilitiesNonCurrent=statement['deferredTaxLiabilitiesNonCurrent'],
+                otherNonCurrentLiabilities=statement['otherNonCurrentLiabilities'],
+                totalNonCurrentLiabilities=statement['totalNonCurrentLiabilities'],
+                otherLiabilities=statement['otherLiabilities'],
+                capitalLeaseObligations=statement['capitalLeaseObligations'],
+                totalLiabilities=statement['totalLiabilities'],
+                preferredStock=statement['preferredStock'],
+                commonStock=statement['commonStock'],
+                retainedEarnings=statement['retainedEarnings'],
+                accumulatedOtherComprehensiveIncomeLoss=statement['accumulatedOtherComprehensiveIncomeLoss'],
+                othertotalStockholdersEquity=statement['othertotalStockholdersEquity'],
+                totalStockholdersEquity=statement['totalStockholdersEquity'],
+                totalLiabilitiesAndStockholdersEquity=statement['totalLiabilitiesAndStockholdersEquity'],
+                minorityInterest=statement['minorityInterest'],
+                totalEquity=statement['totalEquity'],
+                totalLiabilitiesAndTotalEquity=statement['totalLiabilitiesAndTotalEquity'],
+                totalInvestments=statement['totalInvestments'],
+                totalDebt=statement['totalDebt'],
+                netDebt=statement['netDebt']
+            )
+            balance_sheets.append(balance_sheet)
+
+        logging.info(f"Successfully fetched balance sheet data for {symbol}")
+        return balance_sheets
+
+    except requests.RequestException as e:
+        logging.error(f"Error fetching balance sheet data for {symbol}: {str(e)}")
+        return None
+    except Exception as e:
+        logging.error(f"Unexpected error fetching balance sheet data for {symbol}: {str(e)}")
+        return None
+
