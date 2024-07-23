@@ -1,5 +1,5 @@
 import yfinance as yf
-from app.models.stock import Stock, HistoricalData, FinancialStatement, BalanceSheet
+from app.models.stock import Stock, HistoricalData, FinancialStatement, BalanceSheet, CashFlowStatement
 from datetime import datetime, timezone, timedelta
 import logging
 import requests
@@ -95,6 +95,14 @@ def fetch_stock_data(symbol):
         balance_sheets = fetch_balance_sheet(symbol)
         if balance_sheets:
             stock_doc.balance_sheets = balance_sheets
+
+        stock_doc.last_updated = datetime.now(timezone.utc)
+        stock_doc.save()
+        
+        # Fetch and store cash flow statement data
+        cash_flow_statements = fetch_cash_flow_statement(symbol)
+        if cash_flow_statements:
+            stock_doc.cash_flow_statements = cash_flow_statements
 
         stock_doc.last_updated = datetime.now(timezone.utc)
         stock_doc.save()
@@ -269,3 +277,77 @@ def fetch_balance_sheet(symbol):
         logging.error(f"Unexpected error fetching balance sheet data for {symbol}: {str(e)}")
         return None
 
+def fetch_cash_flow_statement(symbol):
+    try:
+        stock = Stock.objects(symbol=symbol).first()
+        
+        # Check if we already have a recent cash flow statement (e.g., less than 3 months old)
+        if stock and stock.cash_flow_statements:
+            latest_cash_flow = stock.cash_flow_statements[0]
+            if (datetime.now(timezone.utc) - latest_cash_flow.date).days < 90:
+                logging.info(f"Using cached cash flow statement for {symbol}")
+                return stock.cash_flow_statements
+
+        # If no recent data, fetch from FMP API
+        url = f"{FMP_BASE_URL}/cash-flow-statement/{symbol}?period=annual&apikey={FMP_API_KEY}"
+        response = requests.get(url)
+        response.raise_for_status()
+        data = response.json()
+
+        if not data:
+            logging.warning(f"No cash flow statement data found for {symbol}")
+            return None
+
+        cash_flow_statements = []
+        for statement in data:
+            cash_flow = CashFlowStatement(
+                date=datetime.strptime(statement['date'], '%Y-%m-%d'),
+                symbol=statement['symbol'],
+                reportedCurrency=statement['reportedCurrency'],
+                cik=statement['cik'],
+                fillingDate=datetime.strptime(statement['fillingDate'], '%Y-%m-%d'),
+                acceptedDate=datetime.strptime(statement['acceptedDate'], '%Y-%m-%d %H:%M:%S'),
+                calendarYear=statement['calendarYear'],
+                period=statement['period'],
+                netIncome=statement['netIncome'],
+                depreciationAndAmortization=statement['depreciationAndAmortization'],
+                deferredIncomeTax=statement['deferredIncomeTax'],
+                stockBasedCompensation=statement['stockBasedCompensation'],
+                changeInWorkingCapital=statement['changeInWorkingCapital'],
+                accountsReceivables=statement['accountsReceivables'],
+                inventory=statement['inventory'],
+                accountsPayables=statement['accountsPayables'],
+                otherWorkingCapital=statement['otherWorkingCapital'],
+                otherNonCashItems=statement['otherNonCashItems'],
+                netCashProvidedByOperatingActivities=statement['netCashProvidedByOperatingActivities'],
+                investmentsInPropertyPlantAndEquipment=statement['investmentsInPropertyPlantAndEquipment'],
+                acquisitionsNet=statement['acquisitionsNet'],
+                purchasesOfInvestments=statement['purchasesOfInvestments'],
+                salesMaturitiesOfInvestments=statement['salesMaturitiesOfInvestments'],
+                otherInvestingActivites=statement['otherInvestingActivites'],
+                netCashUsedForInvestingActivites=statement['netCashUsedForInvestingActivites'],
+                debtRepayment=statement['debtRepayment'],
+                commonStockIssued=statement['commonStockIssued'],
+                commonStockRepurchased=statement['commonStockRepurchased'],
+                dividendsPaid=statement['dividendsPaid'],
+                otherFinancingActivites=statement['otherFinancingActivites'],
+                netCashUsedProvidedByFinancingActivities=statement['netCashUsedProvidedByFinancingActivities'],
+                effectOfForexChangesOnCash=statement['effectOfForexChangesOnCash'],
+                netChangeInCash=statement['netChangeInCash'],
+                cashAtEndOfPeriod=statement['cashAtEndOfPeriod'],
+                cashAtBeginningOfPeriod=statement['cashAtBeginningOfPeriod'],
+                operatingCashFlow=statement['operatingCashFlow'],
+                capitalExpenditure=statement['capitalExpenditure'],
+                freeCashFlow=statement['freeCashFlow']
+            )
+            cash_flow_statements.append(cash_flow)
+
+        logging.info(f"Successfully fetched cash flow statement data for {symbol}")
+        return cash_flow_statements
+
+    except requests.RequestException as e:
+        logging.error(f"Error fetching cash flow statement data for {symbol}: {str(e)}")
+        return None
+    except Exception as e:
+        logging.error(f"Unexpected error fetching cash flow statement data for {symbol}: {str(e)}")
+        return None

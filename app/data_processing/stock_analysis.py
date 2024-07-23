@@ -93,6 +93,18 @@ def get_stock_summary(stock_symbol):
                 "revenue_growth": stock.growth_rates.get('revenue_growth'),
             })
 
+         # Add cash flow statement data to the summary
+        if stock.cash_flow_statements:
+            latest_cash_flow = stock.cash_flow_statements[0]
+            summary.update({
+                "operating_cash_flow": latest_cash_flow.operatingCashFlow,
+                "capital_expenditure": latest_cash_flow.capitalExpenditure,
+                "free_cash_flow": latest_cash_flow.freeCashFlow,
+                "net_cash_provided_by_operating_activities": latest_cash_flow.netCashProvidedByOperatingActivities,
+                "net_cash_used_for_investing_activities": latest_cash_flow.netCashUsedForInvestingActivites,
+                "net_cash_used_provided_by_financing_activities": latest_cash_flow.netCashUsedProvidedByFinancingActivities,
+            })
+
         # Remove None values
         summary = {k: v for k, v in summary.items() if v is not None}
 

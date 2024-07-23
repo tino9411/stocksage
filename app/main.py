@@ -200,6 +200,26 @@ def get_balance_sheet(symbol):
         logging.error(f"Unexpected error getting balance sheet for stock {symbol}: {str(e)}")
         return jsonify({"error": "An unexpected error occurred"}), 500
     
+@app.route('/api/cash_flow_statement/<symbol>')
+def get_cash_flow_statement(symbol):
+    try:
+        logging.info(f"Received request for cash flow statement of {symbol}")
+        stock = fetch_stock_data(symbol)
+        if stock and stock.cash_flow_statements:
+            cash_flow_statements = [stmt.to_mongo().to_dict() for stmt in stock.cash_flow_statements]
+            for stmt in cash_flow_statements:
+                stmt['date'] = stmt['date'].isoformat()
+                stmt['fillingDate'] = stmt['fillingDate'].isoformat()
+                stmt['acceptedDate'] = stmt['acceptedDate'].isoformat()
+            logging.info(f"Successfully retrieved cash flow statement for {symbol}")
+            return jsonify(cash_flow_statements), 200
+        else:
+            logging.warning(f"Cash flow statement not found for {symbol}")
+            return jsonify({"error": "Cash flow statement not found or unable to retrieve data"}), 404
+    except Exception as e:
+        logging.error(f"Unexpected error getting cash flow statement for stock {symbol}: {str(e)}")
+        return jsonify({"error": "An unexpected error occurred"}), 500
+    
     
 
 if __name__ == '__main__':
