@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StockSage</title>
+</head>
+<body>
+    <h1>Welcome to StockSage</h1>
+    <form action="/search" method="post">
+        <input type="text" name="symbol" placeholder="Enter stock symbol">
+        <button type="submit">Search</button>
+    </form>
+    {% if stock %}
+    <h2>{{ stock.company_name }} ({{ stock.symbol }})</h2>
+    <p>Current Price: ${{ stock.current_data.price }}</p>
+    <p>Volume: {{ stock.current_data.volume }}</p>
+    <p>Market Cap: ${{ stock.current_data.market_cap }}</p>
+    <p>P/E Ratio: {{ stock.current_data.pe_ratio }}</p>
+    <p>Dividend Yield: {{ stock.current_data.dividend_yield }}%</p>
+    <p>52 Week High: ${{ stock.current_data['52_week_high'] }}</p>
+    <p>52 Week Low: ${{ stock.current_data['52_week_low'] }}</p>
+    {% endif %}
+</body>
+</html>

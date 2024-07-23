@@ -1,0 +1,28 @@
+stocksage/
+│
+├── app/
+│   ├── __init__.py
+│   ├── main.py
+│   ├── models/
+│   │   ├── __init__.py
+│   │   ├── stock.py
+│   │   └── user.py
+│   ├── database/
+│   │   ├── __init__.py
+│   │   └── mongodb.py
+│   ├── data_retrieval/
+│   │   ├── __init__.py
+│   │   └── stock_api.py
+│   ├── data_processing/
+│   │   ├── __init__.py
+│   │   └── stock_analysis.py
+│   └── scheduler/
+│       ├── __init__.py
+│       └── jobs.py
+│
+├── tests/
+│   └── __init__.py
+│
+├── .env
+├── requirements.txt
+└── run.py
