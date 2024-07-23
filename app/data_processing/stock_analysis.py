@@ -1,6 +1,12 @@
 import numpy as np
 from app.models.stock import Stock
 from app.data_retrieval.stock_api import fetch_stock_data
+from app.data_processing.technical_indicators import (
+    calculate_ema, calculate_macd, calculate_bollinger_bands,
+    calculate_stochastic_oscillator, calculate_atr, calculate_obv,
+    calculate_peg_ratio, calculate_debt_to_ebitda, calculate_roic,
+    calculate_dividend_growth_rate
+)
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -45,6 +51,9 @@ def get_stock_summary(stock_symbol):
             return None
 
         prices = [data.close for data in stock.historical_data]
+        high_prices = [data.high for data in stock.historical_data]
+        low_prices = [data.low for data in stock.historical_data]
+        volumes = [data.volume for data in stock.historical_data]
 
         if not prices:
             logging.error(f"No historical price data found for {stock_symbol}")
@@ -53,6 +62,13 @@ def get_stock_summary(stock_symbol):
         sma_50 = calculate_moving_average(prices, 50)
         sma_200 = calculate_moving_average(prices, 200)
         rsi = calculate_rsi(prices)
+
+        ema_20 = calculate_ema(prices, 20)
+        macd, signal, histogram = calculate_macd(prices)
+        upper_bb, middle_bb, lower_bb = calculate_bollinger_bands(prices)
+        stoch_k, stoch_d = calculate_stochastic_oscillator(prices, low_prices, high_prices)
+        atr = calculate_atr(high_prices, low_prices, prices)
+        obv = calculate_obv(prices, volumes)
 
         summary = {
             "symbol": stock.symbol,
@@ -73,6 +89,17 @@ def get_stock_summary(stock_symbol):
             "50_day_ma": sma_50,
             "200_day_ma": sma_200,
             "rsi": rsi,
+            "20_day_ema": ema_20,
+            "macd": macd,
+            "macd_signal": signal,
+            "macd_histogram": histogram,
+            "bollinger_upper": upper_bb,
+            "bollinger_middle": middle_bb,
+            "bollinger_lower": lower_bb,
+            "stochastic_k": stoch_k,
+            "stochastic_d": stoch_d,
+            "atr": atr,
+            "obv": obv,
         }
 
         # Add financial ratios
@@ -159,6 +186,39 @@ def get_stock_summary(stock_symbol):
                 "roe": latest_metrics.roe,
                 "capex_per_share": latest_metrics.capexPerShare
             })
+
+            # Calculate additional ratios
+            if stock.income_statement and stock.balance_sheets:
+                latest_income = stock.income_statement[0]
+                latest_balance = stock.balance_sheets[0]
+                
+                peg_ratio = calculate_peg_ratio(
+                    summary['pe_ratio'], 
+                    summary.get('earnings_growth', 0)
+                )
+                debt_to_ebitda = calculate_debt_to_ebitda(
+                    latest_balance.totalDebt, 
+                    latest_income.ebitda
+                )
+                roic = calculate_roic(
+                    latest_income.netIncome,
+                    latest_cash_flow.dividendsPaid,
+                    latest_balance.totalDebt,
+                    latest_balance.totalStockholdersEquity
+                )
+                
+                summary.update({
+                    "peg_ratio": peg_ratio,
+                    "debt_to_ebitda": debt_to_ebitda,
+                    "roic": roic
+                })
+
+            # Calculate dividend growth rate if applicable
+            if stock.cash_flow_statements and len(stock.cash_flow_statements) >= 2:
+                dividends = [stmt.dividendsPaid for stmt in stock.cash_flow_statements]
+                years = len(dividends)
+                dividend_growth_rate = calculate_dividend_growth_rate(dividends, years)
+                summary["dividend_growth_rate"] = dividend_growth_rate
 
         # Remove None values
         summary = {k: v for k, v in summary.items() if v is not None}
