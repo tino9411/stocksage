@@ -67,6 +67,34 @@ def get_10k_filing(symbol):
 def get_10q_filing(symbol):
     return get_filing_info(symbol, "10-Q", sec_scraper.get_10q_filing_info)
 
+@app.route('/api/8k_filing/<symbol>')
+def get_8k_filing(symbol):
+    return get_filing_info(symbol, "8-K", sec_scraper.get_8k_filing_info)
+
+@app.route('/api/def14a_filing/<symbol>')
+def get_def_14a_filing(symbol):
+    return get_filing_info(symbol, "DEF-14A", sec_scraper.get_def_14a_filing_info)
+
+@app.route('/api/s1_filing/<symbol>')
+def get_s1_filing(symbol):
+    return get_filing_info(symbol, "S-1", sec_scraper.get_s1_filing_info)
+
+@app.route('/api/form4_filing/<symbol>')
+def get_form4_filing(symbol):
+    return get_filing_info(symbol, "4", sec_scraper.get_form4_filing_info)
+
+@app.route('/api/13d_filing/<symbol>')
+def get_13d_filing(symbol):
+    return get_filing_info(symbol, "SC-13D", sec_scraper.get_13d_filing_info)
+
+@app.route('/api/13g_filing/<symbol>')
+def get_13g_filing(symbol):
+    return get_filing_info(symbol, "SC 13G", sec_scraper.get_13g_filing_info)
+
+@app.route('/api/20f_filing/<symbol>')
+def get_20f_filing(symbol):
+    return get_filing_info(symbol, "20-F", sec_scraper.get_20f_filing_info)
+
 def get_filing_report(symbol, filing_type, get_report_func):
     try:
         logging.info(f"Received request for {filing_type} report of {symbol}")
@@ -87,14 +115,6 @@ def get_filing_report(symbol, filing_type, get_report_func):
         logging.error(f"Unexpected error getting {filing_type} report for stock {symbol}: {str(e)}")
         return jsonify({"error": "An unexpected error occurred"}), 500
 
-@app.route('/api/10k_report/<symbol>')
-def get_10k_report_route(symbol):
-    return get_filing_report(symbol, "10-K", sec_scraper.get_10k_report)
-
-@app.route('/api/10q_report/<symbol>')
-def get_10q_report_route(symbol):
-    return get_filing_report(symbol, "10-Q", sec_scraper.get_10q_report)
-
 @app.route('/api/full_report/<filing_type>/<symbol>')
 def get_full_report(filing_type, symbol):
     try:
@@ -103,6 +123,20 @@ def get_full_report(filing_type, symbol):
             report = sec_scraper.get_10k_report(symbol)
         elif filing_type == "10-Q":
             report = sec_scraper.get_10q_report(symbol)
+        elif filing_type == "8-K":
+            report = sec_scraper.get_8k_report(symbol)
+        elif filing_type == "DEF-14A":
+            report = sec_scraper.get_def_14a_report(symbol)
+        elif filing_type == "S-1":
+            report = sec_scraper.get_s1_report(symbol)
+        elif filing_type == "4":
+            report = sec_scraper.get_form4_report(symbol)
+        elif filing_type == "SC-13D":
+            report = sec_scraper.get_13d_report(symbol)
+        elif filing_type == "SC-13G":
+            report = sec_scraper.get_13g_report(symbol)
+        elif filing_type == "20-F":
+            report = sec_scraper.get_20f_report(symbol)
         else:
             return jsonify({"error": "Invalid filing type"}), 400
 

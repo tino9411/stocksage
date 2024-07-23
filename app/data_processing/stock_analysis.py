@@ -1,7 +1,6 @@
 import numpy as np
 from app.models.stock import Stock
 from app.data_retrieval.stock_api import fetch_stock_data
-from app.data_retrieval.sec_scraper import get_10k_report
 import logging
 from datetime import datetime, timedelta, timezone
 
