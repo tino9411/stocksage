@@ -3,6 +3,7 @@ from app.database.mongodb import initialize_db
 from app.data_processing.stock_analysis import get_stock_summary
 from app.scheduler.jobs import init_scheduler
 from app.data_retrieval.sec_scraper import SECScraper
+from app.data_retrieval.stock_api import fetch_stock_data
 import logging
 from flask_cors import CORS
 from app.models.stock import Stock
@@ -159,6 +160,24 @@ def get_full_report(filing_type, symbol):
             return jsonify(report), 404
     except Exception as e:
         logging.error(f"Unexpected error getting full {filing_type} report for stock {symbol}: {str(e)}")
+        return jsonify({"error": "An unexpected error occurred"}), 500
+
+@app.route('/api/income_statement/<symbol>')
+def get_income_statement(symbol):
+    try:
+        logging.info(f"Received request for income statement of {symbol}")
+        stock = fetch_stock_data(symbol)
+        if stock and stock.income_statement:
+            income_statement = [stmt.to_mongo().to_dict() for stmt in stock.income_statement]
+            for stmt in income_statement:
+                stmt['date'] = stmt['date'].isoformat()
+            logging.info(f"Successfully retrieved income statement for {symbol}")
+            return jsonify(income_statement), 200
+        else:
+            logging.warning(f"Income statement not found for {symbol}")
+            return jsonify({"error": "Income statement not found or unable to retrieve data"}), 404
+    except Exception as e:
+        logging.error(f"Unexpected error getting income statement for stock {symbol}: {str(e)}")
         return jsonify({"error": "An unexpected error occurred"}), 500
 
 

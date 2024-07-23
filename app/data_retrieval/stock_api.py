@@ -1,9 +1,18 @@
 import yfinance as yf
-from app.models.stock import Stock, HistoricalData
+from app.models.stock import Stock, HistoricalData, FinancialStatement
 from datetime import datetime, timezone, timedelta
 import logging
+import requests
+import os
+from dotenv import load_dotenv
+from mongoengine.errors import ValidationError
+
+load_dotenv()
 
 logging.basicConfig(level=logging.DEBUG)
+
+FMP_API_KEY = os.getenv('FMP_API_KEY')
+FMP_BASE_URL = "https://financialmodelingprep.com/api/v3"
 
 def fetch_stock_data(symbol):
     try:
@@ -74,6 +83,11 @@ def fetch_stock_data(symbol):
                 'revenue_growth': info.get('revenueGrowth'),
             }
         
+       # Fetch and store income statement data
+        income_statement = fetch_income_statement(symbol)
+        if income_statement:
+            stock_doc.income_statement = income_statement
+
         stock_doc.last_updated = datetime.now(timezone.utc)
         stock_doc.save()
         
@@ -84,3 +98,76 @@ def fetch_stock_data(symbol):
     except Exception as e:
         logging.error(f"Error fetching data for {symbol}: {str(e)}", exc_info=True)
         raise
+
+def fetch_income_statement(symbol):
+    try:
+        stock = Stock.objects(symbol=symbol).first()
+        
+        # Check if we already have a recent income statement (e.g., less than 3 months old)
+        if stock and stock.income_statement:
+            latest_statement = stock.income_statement[0]
+            if (datetime.now(timezone.utc) - latest_statement.date).days < 90:
+                logging.info(f"Using cached income statement for {symbol}")
+                return stock.income_statement
+
+        # If no recent data, fetch from FMP API
+        url = f"{FMP_BASE_URL}/income-statement/{symbol}?period=annual&apikey={FMP_API_KEY}"
+        response = requests.get(url)
+        response.raise_for_status()
+        data = response.json()
+
+        if not data:
+            logging.warning(f"No income statement data found for {symbol}")
+            return None
+
+        income_statements = []
+        for statement in data:
+            financial_statement = FinancialStatement(
+                date=datetime.strptime(statement['date'], '%Y-%m-%d'),
+                symbol=statement['symbol'],
+                reportedCurrency=statement['reportedCurrency'],
+                cik=statement['cik'],
+                fillingDate=datetime.strptime(statement['fillingDate'], '%Y-%m-%d'),
+                acceptedDate=datetime.strptime(statement['acceptedDate'], '%Y-%m-%d %H:%M:%S'),
+                calendarYear=statement['calendarYear'],
+                period=statement['period'],
+                revenue=statement['revenue'],
+                costOfRevenue=statement['costOfRevenue'],
+                grossProfit=statement['grossProfit'],
+                grossProfitRatio=statement['grossProfitRatio'],
+                researchAndDevelopmentExpenses=statement['researchAndDevelopmentExpenses'],
+                generalAndAdministrativeExpenses=statement['generalAndAdministrativeExpenses'],
+                sellingAndMarketingExpenses=statement['sellingAndMarketingExpenses'],
+                sellingGeneralAndAdministrativeExpenses=statement['sellingGeneralAndAdministrativeExpenses'],
+                otherExpenses=statement['otherExpenses'],
+                operatingExpenses=statement['operatingExpenses'],
+                costAndExpenses=statement['costAndExpenses'],
+                interestIncome=statement['interestIncome'],
+                interestExpense=statement['interestExpense'],
+                depreciationAndAmortization=statement['depreciationAndAmortization'],
+                ebitda=statement['ebitda'],
+                ebitdaratio=statement['ebitdaratio'],
+                operatingIncome=statement['operatingIncome'],
+                operatingIncomeRatio=statement['operatingIncomeRatio'],
+                totalOtherIncomeExpensesNet=statement['totalOtherIncomeExpensesNet'],
+                incomeBeforeTax=statement['incomeBeforeTax'],
+                incomeBeforeTaxRatio=statement['incomeBeforeTaxRatio'],
+                incomeTaxExpense=statement['incomeTaxExpense'],
+                netIncome=statement['netIncome'],
+                netIncomeRatio=statement['netIncomeRatio'],
+                eps=statement['eps'],
+                epsdiluted=statement['epsdiluted'],
+                weightedAverageShsOut=statement['weightedAverageShsOut'],
+                weightedAverageShsOutDil=statement['weightedAverageShsOutDil']
+            )
+            income_statements.append(financial_statement)
+
+        logging.info(f"Successfully fetched income statement data for {symbol}")
+        return income_statements
+
+    except requests.RequestException as e:
+        logging.error(f"Error fetching income statement data for {symbol}: {str(e)}")
+        return None
+    except Exception as e:
+        logging.error(f"Unexpected error fetching income statement data for {symbol}: {str(e)}")
+        return None
