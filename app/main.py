@@ -5,6 +5,7 @@ from app.scheduler.jobs import init_scheduler
 from app.data_retrieval.sec_scraper import SECScraper
 import logging
 from flask_cors import CORS
+from app.models.stock import Stock
 
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}}) 
@@ -119,6 +120,16 @@ def get_filing_report(symbol, filing_type, get_report_func):
 def get_full_report(filing_type, symbol):
     try:
         logging.info(f"Received request for full {filing_type} report of {symbol}")
+        
+        # Check if the report exists in the database
+        stock = Stock.objects(symbol=symbol).first()
+        if stock:
+            existing_report = next((report for report in stock.sec_reports if report.filing_type == filing_type), None)
+            if existing_report:
+                logging.info(f"Retrieved {filing_type} report for {symbol} from database")
+                return existing_report.full_text, 200, {'Content-Type': 'text/plain'}
+
+        # If the report doesn't exist in the database, fetch it from SEC
         if filing_type == "10-K":
             report = sec_scraper.get_10k_report(symbol)
         elif filing_type == "10-Q":
@@ -141,7 +152,7 @@ def get_full_report(filing_type, symbol):
             return jsonify({"error": "Invalid filing type"}), 400
 
         if "error" not in report:
-            logging.info(f"Successfully retrieved full {filing_type} report for {symbol}")
+            logging.info(f"Successfully retrieved and stored full {filing_type} report for {symbol}")
             return report["text"], 200, {'Content-Type': 'text/plain'}
         else:
             logging.warning(f"Error retrieving full {filing_type} report for {symbol}: {report['error']}")
@@ -149,6 +160,7 @@ def get_full_report(filing_type, symbol):
     except Exception as e:
         logging.error(f"Unexpected error getting full {filing_type} report for stock {symbol}: {str(e)}")
         return jsonify({"error": "An unexpected error occurred"}), 500
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

@@ -1,10 +1,11 @@
 import requests
 from bs4 import BeautifulSoup
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 import logging
 import html2text
+from app.models.stock import Stock, SECReport
 
 class SECScraper:
     def __init__(self, user_agent='StockSage vincenzo.riccardi.jobs@gmail.com'):
@@ -96,6 +97,22 @@ class SECScraper:
 
     def get_filing_report(self, symbol, filing_type):
         try:
+            # Check if the report already exists in the database
+            stock = Stock.objects(symbol=symbol).first()
+            if stock:
+                existing_report = next((report for report in stock.sec_reports if report.filing_type == filing_type), None)
+                if existing_report:
+                    # Check if the report is recent (e.g., less than a week old)
+                    if (datetime.now(timezone.utc) - existing_report.retrieved_at).days < 7:
+                        return {
+                            "text": existing_report.full_text,
+                            "url": existing_report.url,
+                            "retrieved_at": existing_report.retrieved_at.isoformat(),
+                            "full_text_length": existing_report.full_text_length,
+                            "truncated": existing_report.truncated
+                        }
+
+            # If the report doesn't exist or is outdated, fetch it from SEC
             filing_info = self.get_filing_info(symbol, filing_type)
             if isinstance(filing_info, dict) and "error" in filing_info:
                 return filing_info
@@ -109,14 +126,32 @@ class SECScraper:
             processed_text = self.process_filing_content(content)
             
             max_length = 500000
-            truncated_text = processed_text[:max_length] + "..." if len(processed_text) > max_length else processed_text
+            truncated = len(processed_text) > max_length
+            truncated_text = processed_text[:max_length] + "..." if truncated else processed_text
             
+            # Store the report in the database
+            if not stock:
+                stock = Stock(symbol=symbol)
+            
+            new_report = SECReport(
+                filing_type=filing_type,
+                url=doc_url,
+                full_text=truncated_text,
+                full_text_length=len(processed_text),
+                truncated=truncated
+            )
+            
+            # Remove old report of the same type if it exists
+            stock.sec_reports = [report for report in stock.sec_reports if report.filing_type != filing_type]
+            stock.sec_reports.append(new_report)
+            stock.save()
+
             return {
                 "text": truncated_text,
                 "url": doc_url,
-                "retrieved_at": datetime.utcnow().isoformat(),
+                "retrieved_at": new_report.retrieved_at.isoformat(),
                 "full_text_length": len(processed_text),
-                "truncated": len(processed_text) > max_length
+                "truncated": truncated
             }
         except Exception as e:
             logging.error(f"Error fetching {filing_type} report for {symbol}: {str(e)}")
