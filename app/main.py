@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, render_template_string
 from app.database.mongodb import initialize_db
 from app.scheduler.jobs import init_scheduler
 from app.data_retrieval.stock_data_manager import StockDataManager
@@ -6,6 +6,46 @@ from app.assistant.assistant import StockAnalysisAssistant
 import logging
 from flask_cors import CORS
 import os
+import markdown2
+
+stock_analysis_template = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ symbol }}</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            color: #2c3e50;
+        }
+        h2, h3, h4 {
+            color: #34495e;
+        }
+        .analysis {
+            background-color: #f9f9f9;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>{{ symbol }}</h1>
+    <div class="analysis">
+        {{ analysis | safe }}
+    </div>
+</body>
+</html>
+"""
 
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}}) 
@@ -58,7 +98,8 @@ def analyze_stock(symbol):
         analysis = stock_assistant.analyze_stock(symbol)
         if analysis:
             logging.info(f"Successfully generated analysis for {symbol}")
-            return jsonify({"analysis": analysis}), 200
+            html_content = markdown2.markdown(analysis)
+            return render_template_string(stock_analysis_template, symbol=symbol, analysis=html_content)
         else:
             logging.warning(f"Failed to generate analysis for {symbol}")
             return jsonify({"error": "Failed to generate analysis"}), 500

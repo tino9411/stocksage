@@ -23,7 +23,7 @@ class StockAnalysisAssistant:
             self.assistant = self.get_assistant(assistant_id)
         else:
             self.assistant = self.create_assistant()
-            
+
     def get_assistant(self, assistant_id):
         try:
             return openai.beta.assistants.retrieve(assistant_id)
@@ -43,10 +43,8 @@ class StockAnalysisAssistant:
                 1. Basic stock information (price, volume, market cap)
                 2. Technical indicators (moving averages, RSI, MACD)
                 3. Financial ratios and metrics
-                4. Recent news and its potential impact
-                5. Overall market sentiment
-                6. Potential risks and opportunities
-                7. A summary and recommendation
+                4. Potential risks and opportunities
+                5. A summary and recommendation (buy, sell or hold). Include a recommended entry price.
                 
                 Use the provided tools to fetch and analyze data. Always provide clear explanations and justify your analysis.
                 """,
