@@ -49,10 +49,14 @@ def calculate_obv(prices, volumes):
     return obv[-1]
 
 def calculate_peg_ratio(pe_ratio, earnings_growth_rate):
-    if earnings_growth_rate == 0:
+    if pe_ratio is None or earnings_growth_rate is None or earnings_growth_rate == 0:
         return None
-    return pe_ratio / earnings_growth_rate
-
+    try:
+        return pe_ratio / earnings_growth_rate
+    except ZeroDivisionError:
+        return None
+    except TypeError:
+        return None
 def calculate_debt_to_ebitda(total_debt, ebitda):
     if ebitda == 0:
         return None
