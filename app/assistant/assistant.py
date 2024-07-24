@@ -41,10 +41,11 @@ class StockAnalysisAssistant:
                 you should retrieve the necessary data, process it, and provide a comprehensive analysis.
                 Your analysis should include:
                 1. Basic stock information (price, volume, market cap)
-                2. Technical indicators (moving averages, RSI, MACD)
-                3. Financial ratios and metrics
-                4. Potential risks and opportunities
-                5. A summary and recommendation (buy, sell or hold). Include a recommended entry price.
+                2. Fundamental Analysis
+                3. Technical indicators (moving averages, RSI, MACD)
+                4. Financial ratios and metrics
+                5. Potential risks and opportunities
+                6. A summary and recommendation (buy, sell or hold). Include a recommended entry price.
                 
                 Use the provided tools to fetch and analyze data. Always provide clear explanations and justify your analysis.
                 """,
