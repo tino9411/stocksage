@@ -149,10 +149,10 @@ class CashFlowStatement(EmbeddedDocument):
     capitalExpenditure = FloatField()
     freeCashFlow = FloatField()
 
-class FinancialMetrics(EmbeddedDocument):
-    date = DateTimeField(required=True, default=timezone.utc)
-    calendarYear = StringField(required=True)
-    period = StringField(required=True)
+class KeyMetrics(EmbeddedDocument):
+    date = DateTimeField(required=True)
+    period = StringField(required=True)  # 'annual' or 'quarterly'
+    symbol = StringField(required=True)
     revenuePerShare = FloatField()
     netIncomePerShare = FloatField()
     operatingCashFlowPerShare = FloatField()
@@ -185,7 +185,7 @@ class FinancialMetrics(EmbeddedDocument):
     dividendYield = FloatField()
     payoutRatio = FloatField()
     salesGeneralAndAdministrativeToRevenue = FloatField()
-    researchAndDdevelopementToRevenue = FloatField()
+    researchAndDevelopmentToRevenue = FloatField()
     intangiblesToTotalAssets = FloatField()
     capexToOperatingCashFlow = FloatField()
     capexToRevenue = FloatField()
@@ -277,7 +277,7 @@ class Stock(Document):
     income_statement = ListField(EmbeddedDocumentField('FinancialStatement'))
     balance_sheets = ListField(EmbeddedDocumentField('BalanceSheet'))
     cash_flow_statements = ListField(EmbeddedDocumentField('CashFlowStatement'))
-    financial_metrics = ListField(EmbeddedDocumentField('FinancialMetrics'))
+    key_metrics = ListField(EmbeddedDocumentField('KeyMetrics'))
     real_time_quote = EmbeddedDocumentField(RealTimeQuote)
 
     meta = {

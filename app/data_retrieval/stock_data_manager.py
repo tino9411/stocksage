@@ -1,8 +1,9 @@
 from app.data_processing.stock_analysis import get_stock_summary
 from app.data_retrieval.sec_scraper import SECScraper
-from app.data_retrieval.stock_api import fetch_stock_data, fetch_income_statement, fetch_balance_sheet, fetch_cash_flow_statement
+from app.data_retrieval.stock_api import fetch_stock_data, fetch_income_statement, fetch_balance_sheet, fetch_cash_flow_statement, fetch_key_metrics
 from app.models.stock import Stock
 import logging
+from datetime import timezone, datetime
 
 class StockDataManager:
     def __init__(self):
@@ -140,18 +141,53 @@ class StockDataManager:
             logging.error(f"Unexpected error getting {statement_type} for stock {symbol}: {str(e)}")
             return {"error": "An unexpected error occurred"}
         
-    def get_financial_metrics(self, symbol):
+    def get_key_metrics(self, symbol, years=5, period=None):
         try:
-            logging.info(f"Received request for financial metrics of {symbol}")
-            stock = fetch_stock_data(symbol)
-            if stock and stock.financial_metrics:
-                latest_metrics = stock.financial_metrics[0].to_mongo().to_dict()
-                latest_metrics['date'] = latest_metrics['date'].isoformat()
-                logging.info(f"Successfully retrieved financial metrics for {symbol}")
-                return latest_metrics
+            logging.info(f"Received request for key metrics of {symbol} for the past {years} years")
+            stock = Stock.objects(symbol=symbol).first()
+            if not stock:
+                stock = fetch_stock_data(symbol)
+            
+            if stock:
+                # Check if we have recent key metrics data
+                if stock.key_metrics:
+                    latest_metric = max(stock.key_metrics, key=lambda x: x.date)
+                    now = datetime.now(timezone.utc)
+                    latest_metric_date = latest_metric.date.replace(tzinfo=timezone.utc) if latest_metric.date.tzinfo is None else latest_metric.date
+                    if (now - latest_metric_date).days < 1:
+                        logging.info(f"Using cached key metrics for {symbol}")
+                        metrics = stock.key_metrics
+                    else:
+                        metrics = fetch_key_metrics(symbol, years)
+                        if metrics:
+                            stock.key_metrics = metrics
+                            stock.save()
+                else:
+                    metrics = fetch_key_metrics(symbol, years)
+                    if metrics:
+                        stock.key_metrics = metrics
+                        stock.save()
+
+                if metrics:
+                    if period:
+                        metrics = [m for m in metrics if m.period == period]
+                    
+                    metrics_data = []
+                    for km in metrics:
+                        metric_dict = km.to_mongo().to_dict()
+                        if 'date' in metric_dict and metric_dict['date']:
+                            metric_dict['date'] = metric_dict['date'].replace(tzinfo=timezone.utc).isoformat()
+                        metric_dict = {k: v for k, v in metric_dict.items() if v is not None}
+                        metrics_data.append(metric_dict)
+                    
+                    logging.info(f"Successfully retrieved key metrics for {symbol}")
+                    return metrics_data
+                else:
+                    logging.warning(f"Key metrics not found for {symbol}")
+                    return {"error": f"Key metrics not found or unable to retrieve data"}
             else:
-                logging.warning(f"Financial metrics not found for {symbol}")
-                return {"error": "Financial metrics not found or unable to retrieve data"}
+                logging.warning(f"Stock data not found for {symbol}")
+                return {"error": f"Stock data not found for {symbol}"}
         except Exception as e:
-            logging.error(f"Unexpected error getting financial metrics for stock {symbol}: {str(e)}")
+            logging.error(f"Unexpected error getting key metrics for stock {symbol}: {str(e)}")
             return {"error": "An unexpected error occurred"}

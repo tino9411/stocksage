@@ -88,9 +88,11 @@ def get_full_report(filing_type, symbol):
 def get_financial_statement(statement_type, symbol, years=5):
     return jsonify(stock_data_manager.get_financial_statement(symbol, statement_type, years))
 
-@app.route('/api/financial_metrics/<symbol>')
-def get_financial_metrics(symbol):
-    return jsonify(stock_data_manager.get_financial_metrics(symbol))
+@app.route('/api/key_metrics/<symbol>')
+@app.route('/api/key_metrics/<symbol>/<int:years>')
+def get_key_metrics(symbol, years=5):
+    period = request.args.get('period')
+    return jsonify(stock_data_manager.get_key_metrics(symbol, years, period))
 
 @app.route('/api/analyze_stock/<symbol>')
 def analyze_stock(symbol):

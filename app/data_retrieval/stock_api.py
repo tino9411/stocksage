@@ -1,4 +1,4 @@
-from app.models.stock import Stock, HistoricalData, FinancialStatement, BalanceSheet, CashFlowStatement, FinancialMetrics, RealTimeQuote
+from app.models.stock import Stock, HistoricalData, FinancialStatement, BalanceSheet, CashFlowStatement, KeyMetrics, RealTimeQuote
 from datetime import datetime, timezone, timedelta
 import logging
 import requests
@@ -63,6 +63,13 @@ def fetch_stock_data(symbol):
                 volume=int(row['Volume'])
             ) for date, row in hist.iterrows()
         ]
+
+        # Fetch key metrics (both annual and quarterly)
+        key_metrics = fetch_key_metrics(symbol)
+        if key_metrics:
+            stock.key_metrics = key_metrics
+        else:
+            logging.warning(f"No key metrics data available for {symbol}")
 
         stock.last_updated = datetime.now(timezone.utc)
 
@@ -480,89 +487,108 @@ def fetch_cash_flow_statement(symbol, years=5, force_refresh=False):
         logging.error(f"Unexpected error fetching cash flow statement data for {symbol}: {str(e)}")
         return None
     
-def fetch_financial_metrics(symbol):
+def fetch_key_metrics(symbol, years=5):
     try:
-        url = f"{FMP_BASE_URL}/key-metrics/{symbol}?period=annual&apikey={FMP_API_KEY}"
-        response = requests.get(url)
-        response.raise_for_status()
-        data = response.json()
+        end_date = datetime.now(timezone.utc)
+        start_date = end_date - timedelta(days=years * 365)
+        
+        # Fetch both annual and quarterly data
+        annual_url = f"{FMP_BASE_URL}/key-metrics/{symbol}?period=annual&limit={years}&apikey={FMP_API_KEY}"
+        quarterly_url = f"{FMP_BASE_URL}/key-metrics/{symbol}?period=quarter&limit={years * 4}&apikey={FMP_API_KEY}"
 
-        if not data:
-            logging.warning(f"No financial metrics data found for {symbol}")
+        annual_response = requests.get(annual_url)
+        annual_response.raise_for_status()
+        annual_data = annual_response.json()
+
+        quarterly_response = requests.get(quarterly_url)
+        quarterly_response.raise_for_status()
+        quarterly_data = quarterly_response.json()
+
+        all_metrics = annual_data + quarterly_data
+
+        if not all_metrics:
+            logging.warning(f"No key metrics data found for {symbol}")
             return None
 
-        financial_metrics = []
-        for metrics in data:
-            financial_metric = FinancialMetrics(
-                date=datetime.strptime(metrics['date'], '%Y-%m-%d'),
-                calendarYear=metrics['calendarYear'],
-                period=metrics['period'],
-                revenuePerShare=metrics['revenuePerShare'],
-                netIncomePerShare=metrics['netIncomePerShare'],
-                operatingCashFlowPerShare=metrics['operatingCashFlowPerShare'],
-                freeCashFlowPerShare=metrics['freeCashFlowPerShare'],
-                cashPerShare=metrics['cashPerShare'],
-                bookValuePerShare=metrics['bookValuePerShare'],
-                tangibleBookValuePerShare=metrics['tangibleBookValuePerShare'],
-                shareholdersEquityPerShare=metrics['shareholdersEquityPerShare'],
-                interestDebtPerShare=metrics['interestDebtPerShare'],
-                marketCap=metrics['marketCap'],
-                enterpriseValue=metrics['enterpriseValue'],
-                peRatio=metrics['peRatio'],
-                priceToSalesRatio=metrics['priceToSalesRatio'],
-                pocfratio=metrics['pocfratio'],
-                pfcfRatio=metrics['pfcfRatio'],
-                pbRatio=metrics['pbRatio'],
-                ptbRatio=metrics['ptbRatio'],
-                evToSales=metrics['evToSales'],
-                enterpriseValueOverEBITDA=metrics['enterpriseValueOverEBITDA'],
-                evToOperatingCashFlow=metrics['evToOperatingCashFlow'],
-                evToFreeCashFlow=metrics['evToFreeCashFlow'],
-                earningsYield=metrics['earningsYield'],
-                freeCashFlowYield=metrics['freeCashFlowYield'],
-                debtToEquity=metrics['debtToEquity'],
-                debtToAssets=metrics['debtToAssets'],
-                netDebtToEBITDA=metrics['netDebtToEBITDA'],
-                currentRatio=metrics['currentRatio'],
-                interestCoverage=metrics['interestCoverage'],
-                incomeQuality=metrics['incomeQuality'],
-                dividendYield=metrics['dividendYield'],
-                payoutRatio=metrics['payoutRatio'],
-                salesGeneralAndAdministrativeToRevenue=metrics['salesGeneralAndAdministrativeToRevenue'],
-                researchAndDdevelopementToRevenue=metrics['researchAndDdevelopementToRevenue'],
-                intangiblesToTotalAssets=metrics['intangiblesToTotalAssets'],
-                capexToOperatingCashFlow=metrics['capexToOperatingCashFlow'],
-                capexToRevenue=metrics['capexToRevenue'],
-                capexToDepreciation=metrics['capexToDepreciation'],
-                stockBasedCompensationToRevenue=metrics['stockBasedCompensationToRevenue'],
-                grahamNumber=metrics['grahamNumber'],
-                roic=metrics['roic'],
-                returnOnTangibleAssets=metrics['returnOnTangibleAssets'],
-                grahamNetNet=metrics['grahamNetNet'],
-                workingCapital=metrics['workingCapital'],
-                tangibleAssetValue=metrics['tangibleAssetValue'],
-                netCurrentAssetValue=metrics['netCurrentAssetValue'],
-                investedCapital=metrics['investedCapital'],
-                averageReceivables=metrics['averageReceivables'],
-                averagePayables=metrics['averagePayables'],
-                averageInventory=metrics['averageInventory'],
-                daysSalesOutstanding=metrics['daysSalesOutstanding'],
-                daysPayablesOutstanding=metrics['daysPayablesOutstanding'],
-                daysOfInventoryOnHand=metrics['daysOfInventoryOnHand'],
-                receivablesTurnover=metrics['receivablesTurnover'],
-                payablesTurnover=metrics['payablesTurnover'],
-                inventoryTurnover=metrics['inventoryTurnover'],
-                roe=metrics['roe'],
-                capexPerShare=metrics['capexPerShare']
+        key_metrics = []
+        
+        for metrics in all_metrics:
+            metrics_date = datetime.strptime(metrics['date'], '%Y-%m-%d').replace(tzinfo=timezone.utc)
+            if metrics_date < start_date:
+                continue
+            
+            key_metric = KeyMetrics(
+                date=metrics_date,
+                period=metrics['period'],  # Use the period from the API response
+                symbol=symbol,
+                revenuePerShare=metrics.get('revenuePerShare'),
+                netIncomePerShare=metrics.get('netIncomePerShare'),
+                operatingCashFlowPerShare=metrics.get('operatingCashFlowPerShare'),
+                freeCashFlowPerShare=metrics.get('freeCashFlowPerShare'),
+                cashPerShare=metrics.get('cashPerShare'),
+                bookValuePerShare=metrics.get('bookValuePerShare'),
+                tangibleBookValuePerShare=metrics.get('tangibleBookValuePerShare'),
+                shareholdersEquityPerShare=metrics.get('shareholdersEquityPerShare'),
+                interestDebtPerShare=metrics.get('interestDebtPerShare'),
+                marketCap=metrics.get('marketCap'),
+                enterpriseValue=metrics.get('enterpriseValue'),
+                peRatio=metrics.get('peRatio'),
+                priceToSalesRatio=metrics.get('priceToSalesRatio'),
+                pocfratio=metrics.get('pocfratio'),
+                pfcfRatio=metrics.get('pfcfRatio'),
+                pbRatio=metrics.get('pbRatio'),
+                ptbRatio=metrics.get('ptbRatio'),
+                evToSales=metrics.get('evToSales'),
+                enterpriseValueOverEBITDA=metrics.get('enterpriseValueOverEBITDA'),
+                evToOperatingCashFlow=metrics.get('evToOperatingCashFlow'),
+                evToFreeCashFlow=metrics.get('evToFreeCashFlow'),
+                earningsYield=metrics.get('earningsYield'),
+                freeCashFlowYield=metrics.get('freeCashFlowYield'),
+                debtToEquity=metrics.get('debtToEquity'),
+                debtToAssets=metrics.get('debtToAssets'),
+                netDebtToEBITDA=metrics.get('netDebtToEBITDA'),
+                currentRatio=metrics.get('currentRatio'),
+                interestCoverage=metrics.get('interestCoverage'),
+                incomeQuality=metrics.get('incomeQuality'),
+                dividendYield=metrics.get('dividendYield'),
+                payoutRatio=metrics.get('payoutRatio'),
+                salesGeneralAndAdministrativeToRevenue=metrics.get('salesGeneralAndAdministrativeToRevenue'),
+                researchAndDevelopmentToRevenue=metrics.get('researchAndDevelopementToRevenue'),
+                intangiblesToTotalAssets=metrics.get('intangiblesToTotalAssets'),
+                capexToOperatingCashFlow=metrics.get('capexToOperatingCashFlow'),
+                capexToRevenue=metrics.get('capexToRevenue'),
+                capexToDepreciation=metrics.get('capexToDepreciation'),
+                stockBasedCompensationToRevenue=metrics.get('stockBasedCompensationToRevenue'),
+                grahamNumber=metrics.get('grahamNumber'),
+                roic=metrics.get('roic'),
+                returnOnTangibleAssets=metrics.get('returnOnTangibleAssets'),
+                grahamNetNet=metrics.get('grahamNetNet'),
+                workingCapital=metrics.get('workingCapital'),
+                tangibleAssetValue=metrics.get('tangibleAssetValue'),
+                netCurrentAssetValue=metrics.get('netCurrentAssetValue'),
+                investedCapital=metrics.get('investedCapital'),
+                averageReceivables=metrics.get('averageReceivables'),
+                averagePayables=metrics.get('averagePayables'),
+                averageInventory=metrics.get('averageInventory'),
+                daysSalesOutstanding=metrics.get('daysSalesOutstanding'),
+                daysPayablesOutstanding=metrics.get('daysPayablesOutstanding'),
+                daysOfInventoryOnHand=metrics.get('daysOfInventoryOnHand'),
+                receivablesTurnover=metrics.get('receivablesTurnover'),
+                payablesTurnover=metrics.get('payablesTurnover'),
+                inventoryTurnover=metrics.get('inventoryTurnover'),
+                roe=metrics.get('roe'),
+                capexPerShare=metrics.get('capexPerShare')
             )
-            financial_metrics.append(financial_metric)
+            key_metrics.append(key_metric)
 
-        logging.info(f"Successfully fetched financial metrics data for {symbol}")
-        return financial_metrics
+        # Sort key metrics by date (newest first)
+        key_metrics.sort(key=lambda x: x.date, reverse=True)
+
+        return key_metrics
 
     except requests.RequestException as e:
-        logging.error(f"Error fetching financial metrics data for {symbol}: {str(e)}")
+        logging.error(f"Error fetching key metrics data for {symbol}: {str(e)}")
         return None
     except Exception as e:
-        logging.error(f"Unexpected error fetching financial metrics data for {symbol}: {str(e)}")
+        logging.error(f"Unexpected error fetching key metrics data for {symbol}: {str(e)}")
         return None
