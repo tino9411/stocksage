@@ -15,7 +15,7 @@ class CustomJSONEncoder(json.JSONEncoder):
         if isinstance(obj, datetime):
             return obj.isoformat()
         return super().default(obj)
-    
+
 class StockAnalysisAssistant:
     def __init__(self, stock_data_manager, assistant_id=None):
         self.stock_data_manager = stock_data_manager
@@ -48,6 +48,7 @@ class StockAnalysisAssistant:
                 6. A summary and recommendation (buy, sell or hold). Include a recommended entry price.
                 
                 Use the provided tools to fetch and analyze data. Always provide clear explanations and justify your analysis.
+                Be conversational and engaging in your responses. Remember the context of the ongoing conversation.
                 """,
                 model="gpt-4o-mini",
                 tools=[{
@@ -73,7 +74,7 @@ class StockAnalysisAssistant:
                     }
                 }]
             )
-            return assistant.id
+            return assistant
         except Exception as e:
             logging.error(f"Error creating assistant: {str(e)}")
             raise
@@ -85,136 +86,77 @@ class StockAnalysisAssistant:
             elif data_type in ["income_statement", "balance_sheet", "cash_flow_statement"]:
                 data = self.stock_data_manager.get_financial_statement(symbol, data_type)
             elif data_type == "financial_metrics":
-                data = self.stock_data_manager.get_financial_metrics(symbol)
+                data = self.stock_data_manager.get_key_metrics(symbol)
             else:
                 return {"error": f"Invalid data type: {data_type}"}
             
-            # Use the custom JSON encoder to handle datetime objects
             return json.loads(json.dumps(data, cls=CustomJSONEncoder))
         except Exception as e:
             logging.error(f"Error getting stock data: {str(e)}")
             return {"error": f"Failed to retrieve {data_type} for {symbol}: {str(e)}"}
 
-    def create_thread(self):
+    def process_stock_conversation(self, stock_symbol, message, conversation_history):
         try:
             thread = openai.beta.threads.create()
-            return thread
-        except Exception as e:
-            logging.error(f"Error creating thread: {str(e)}")
-            raise
-
-    def add_message_to_thread(self, thread_id, content):
-        try:
-            message = openai.beta.threads.messages.create(
-                thread_id=thread_id,
-                role="user",
-                content=content
-            )
-            return message
-        except Exception as e:
-            logging.error(f"Error adding message to thread: {str(e)}")
-            raise
-
-    def run_assistant(self, thread_id, instructions=None):
-        try:
-            run = openai.beta.threads.runs.create(
-                thread_id=thread_id,
-                assistant_id=self.assistant.id,
-                instructions=instructions
-            )
-            return run
-        except Exception as e:
-            logging.error(f"Error running assistant: {str(e)}")
-            raise
-
-    def process_tool_calls(self, thread_id, run_id, tool_calls):
-        try:
-            tool_outputs = []
-            for tool_call in tool_calls:
-                if tool_call.function.name == "get_stock_data":
-                    args = json.loads(tool_call.function.arguments)
-                    symbol = args.get("symbol")
-                    data_type = args.get("data_type", "summary")  # Default to summary if not provided
-                    
-                    if not symbol:
-                        raise ValueError("Symbol is required for get_stock_data function")
-                    
-                    data = self.get_stock_data(symbol, data_type)
-                    tool_outputs.append({
-                        "tool_call_id": tool_call.id,
-                        "output": json.dumps(data, cls=CustomJSONEncoder)
-                    })
             
-            openai.beta.threads.runs.submit_tool_outputs(
-                thread_id=thread_id,
-                run_id=run_id,
-                tool_outputs=tool_outputs
+            # Add conversation history to the thread
+            for msg in conversation_history:
+                openai.beta.threads.messages.create(
+                    thread_id=thread.id,
+                    role=msg['role'],
+                    content=msg['content']
+                )
+            
+            # Add the new user message
+            openai.beta.threads.messages.create(
+                thread_id=thread.id,
+                role="user",
+                content=f"Regarding {stock_symbol}: {message}"
             )
-        except Exception as e:
-            logging.error(f"Error processing tool calls: {str(e)}")
-            raise
-
-    def get_run_status(self, thread_id, run_id):
-        try:
-            run = openai.beta.threads.runs.retrieve(
-                thread_id=thread_id,
-                run_id=run_id
+            
+            run = openai.beta.threads.runs.create(
+                thread_id=thread.id,
+                assistant_id=self.assistant.id,
+                instructions=f"You are analyzing the stock {stock_symbol}. Provide relevant and detailed information based on the user's query. Use the get_stock_data function to retrieve necessary information."
             )
-            return run.status
-        except Exception as e:
-            logging.error(f"Error getting run status: {str(e)}")
-            raise
-
-    def get_messages(self, thread_id):
-        try:
-            messages = openai.beta.threads.messages.list(thread_id=thread_id)
-            return messages
-        except Exception as e:
-            logging.error(f"Error getting messages: {str(e)}")
-            raise
-
-    def analyze_stock(self, symbol):
-        try:
-            thread = self.create_thread()
-            self.add_message_to_thread(thread.id, f"Analyze the stock {symbol}")
-            run = self.run_assistant(thread.id)
             
             while True:
-                time.sleep(1)  # Wait for 1 second before checking status
-                status = self.get_run_status(thread.id, run.id)
-                if status == 'completed':
+                time.sleep(1)
+                run_status = openai.beta.threads.runs.retrieve(
+                    thread_id=thread.id,
+                    run_id=run.id
+                )
+                logging.debug(f"Run status: {run_status.status}")
+                
+                if run_status.status == 'completed':
                     break
-                elif status == 'requires_action':
-                    run_details = openai.beta.threads.runs.retrieve(
+                elif run_status.status == 'requires_action':
+                    tool_calls = run_status.required_action.submit_tool_outputs.tool_calls
+                    tool_outputs = []
+                    for tool_call in tool_calls:
+                        if tool_call.function.name == "get_stock_data":
+                            arguments = json.loads(tool_call.function.arguments)
+                            data_type = arguments.get('data_type', 'summary')
+                            output = self.get_stock_data(stock_symbol, data_type)
+                            tool_outputs.append({
+                                "tool_call_id": tool_call.id,
+                                "output": json.dumps(output)
+                            })
+                    openai.beta.threads.runs.submit_tool_outputs(
                         thread_id=thread.id,
-                        run_id=run.id
+                        run_id=run.id,
+                        tool_outputs=tool_outputs
                     )
-                    try:
-                        self.process_tool_calls(
-                            thread.id,
-                            run.id,
-                            run_details.required_action.submit_tool_outputs.tool_calls
-                        )
-                    except Exception as e:
-                        logging.error(f"Error in process_tool_calls: {str(e)}")
-                        raise
-                elif status in ['failed', 'cancelled', 'expired']:
-                    error_message = f"Run ended with status: {status}"
-                    if hasattr(run, 'last_error'):
-                        error_message += f". Error: {run.last_error}"
-                    raise Exception(error_message)
+                elif run_status.status in ['failed', 'cancelled', 'expired']:
+                    raise Exception(f"Run ended with status: {run_status.status}")
             
-            messages = self.get_messages(thread.id)
+            messages = openai.beta.threads.messages.list(thread_id=thread.id)
             for message in reversed(messages.data):
                 if message.role == 'assistant':
-                    return message.content[0].text.value
+                    content = message.content[0].text.value if isinstance(message.content, list) else message.content
+                    return content
 
-            return "No analysis generated."
+            raise Exception("No assistant message found")
         except Exception as e:
-            logging.error(f"Error analyzing stock {symbol}: {str(e)}", exc_info=True)
-            return f"An error occurred while analyzing the stock: {str(e)}"
-
-# Usage example
-# assistant = StockAnalysisAssistant(StockDataManager())
-# analysis = assistant.analyze_stock("AAPL")
-# print(analysis)
+            logging.error(f"Error in process_stock_conversation: {str(e)}", exc_info=True)
+            return f"I apologize, but I encountered an error while processing your request. Error details: {str(e)}"

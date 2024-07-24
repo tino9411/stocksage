@@ -48,7 +48,7 @@ stock_analysis_template = """
 """
 
 app = Flask(__name__)
-CORS(app, resources={r"/api/*": {"origins": "*"}}) 
+CORS(app, resources={r"/api/*": {"origins": "http://localhost:3000"}}, supports_credentials=True)
 logging.basicConfig(level=logging.DEBUG)
 
 initialize_db()
@@ -110,5 +110,44 @@ def analyze_stock(symbol):
         logging.error(f"Unexpected error analyzing stock {symbol}: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/watchlist')
+def get_watchlist():
+    # Static watchlist
+    watchlist = [
+        {'symbol': 'AAPL', 'companyName': 'Apple Inc.'},
+        {'symbol': 'GOOGL', 'companyName': 'Alphabet Inc.'},
+        {'symbol': 'MSFT', 'companyName': 'Microsoft Corporation'},
+        {'symbol': 'AMZN', 'companyName': 'Amazon.com, Inc.'},
+        {'symbol': 'FB', 'companyName': 'Meta Platforms, Inc.'},
+    ]
+    return jsonify(watchlist)
+
+@app.route('/api/chat', methods=['POST', 'OPTIONS'])
+def chat():
+    if request.method == 'OPTIONS':
+        # Preflight request. Reply successfully:
+        response = app.make_default_options_response()
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        return response
+
+    try:
+        data = request.json
+        stock_symbol = data.get('stock')
+        message = data.get('message')
+        conversation_history = data.get('conversation_history', [])
+
+        if not stock_symbol or not message:
+            return jsonify({"error": "Missing stock symbol or message"}), 400
+
+        response = stock_assistant.process_stock_conversation(stock_symbol, message, conversation_history)
+        
+        # Convert Markdown to HTML for easier rendering on the frontend
+        html_response = markdown2.markdown(response)
+        
+        return jsonify({"message": html_response})
+    except Exception as e:
+        logging.error(f"Error in chat endpoint: {str(e)}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=False)

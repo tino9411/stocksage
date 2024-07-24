@@ -21,5 +21,5 @@ def update_specific_stock(symbol):
 
 def init_scheduler():
     scheduler = BackgroundScheduler()
-    scheduler.add_job(update_all_stocks, 'interval', minutes=5)  # Update every 5 minutes
+    scheduler.add_job(update_all_stocks, 'interval', minutes=60)  # Update every 5 minutes
     scheduler.start()
