@@ -123,36 +123,54 @@ def fetch_stock_data(symbol):
         logging.error(f"Error fetching data for {symbol}: {str(e)}", exc_info=True)
         raise
 
-def fetch_income_statement(symbol):
+def fetch_income_statement(symbol, years=5, force_refresh=False):
     try:
         stock = Stock.objects(symbol=symbol).first()
         
-        # Check if we already have a recent income statement (e.g., less than 3 months old)
-        if stock and stock.income_statement:
+        # Check if we already have recent income statements (e.g., less than 1 day old)
+        if not force_refresh and stock and stock.income_statement:
             latest_statement = stock.income_statement[0]
-            if (datetime.now(timezone.utc) - latest_statement.date).days < 90:
-                logging.info(f"Using cached income statement for {symbol}")
+            if (datetime.now(timezone.utc) - latest_statement.date.replace(tzinfo=timezone.utc)).days < 1:
+                logging.info(f"Using cached income statements for {symbol}")
                 return stock.income_statement
 
         # If no recent data, fetch from FMP API
-        url = f"{FMP_BASE_URL}/income-statement/{symbol}?period=annual&apikey={FMP_API_KEY}"
-        response = requests.get(url)
-        response.raise_for_status()
-        data = response.json()
+        end_date = datetime.now(timezone.utc)
+        start_date = end_date - timedelta(days=years * 365)
+        
+        annual_url = f"{FMP_BASE_URL}/income-statement/{symbol}?period=annual&limit={years}&apikey={FMP_API_KEY}"
+        quarterly_url = f"{FMP_BASE_URL}/income-statement/{symbol}?period=quarter&limit={years * 4}&apikey={FMP_API_KEY}"
 
-        if not data:
+        annual_response = requests.get(annual_url)
+        annual_response.raise_for_status()
+        annual_data = annual_response.json()
+
+        try:
+            quarterly_response = requests.get(quarterly_url)
+            quarterly_response.raise_for_status()
+            quarterly_data = quarterly_response.json()
+        except requests.RequestException as e:
+            logging.warning(f"Failed to fetch quarterly data for {symbol}: {str(e)}")
+            quarterly_data = []
+
+        if not annual_data and not quarterly_data:
             logging.warning(f"No income statement data found for {symbol}")
             return None
 
         income_statements = []
-        for statement in data:
+        
+        for statement in annual_data + quarterly_data:
+            statement_date = datetime.strptime(statement['date'], '%Y-%m-%d').replace(tzinfo=timezone.utc)
+            if statement_date < start_date:
+                continue
+            
             financial_statement = FinancialStatement(
-                date=datetime.strptime(statement['date'], '%Y-%m-%d'),
+                date=statement_date,
                 symbol=statement['symbol'],
                 reportedCurrency=statement['reportedCurrency'],
                 cik=statement['cik'],
-                fillingDate=datetime.strptime(statement['fillingDate'], '%Y-%m-%d'),
-                acceptedDate=datetime.strptime(statement['acceptedDate'], '%Y-%m-%d %H:%M:%S'),
+                fillingDate=datetime.strptime(statement['fillingDate'], '%Y-%m-%d').replace(tzinfo=timezone.utc),
+                acceptedDate=datetime.strptime(statement['acceptedDate'], '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc),
                 calendarYear=statement['calendarYear'],
                 period=statement['period'],
                 revenue=statement['revenue'],
@@ -186,7 +204,18 @@ def fetch_income_statement(symbol):
             )
             income_statements.append(financial_statement)
 
-        logging.info(f"Successfully fetched income statement data for {symbol}")
+        # Sort income statements by date (newest first)
+        income_statements.sort(key=lambda x: x.date, reverse=True)
+
+        # Update the stock object with new income statements
+        if stock:
+            stock.income_statement = income_statements
+            stock.save()
+        else:
+            stock = Stock(symbol=symbol, income_statement=income_statements)
+            stock.save()
+
+        logging.info(f"Successfully fetched and saved income statement data for {symbol}")
         return income_statements
 
     except requests.RequestException as e:
@@ -195,7 +224,7 @@ def fetch_income_statement(symbol):
     except Exception as e:
         logging.error(f"Unexpected error fetching income statement data for {symbol}: {str(e)}")
         return None
-
+    
 def fetch_balance_sheet(symbol):
     try:
         stock = Stock.objects(symbol=symbol).first()

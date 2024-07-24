@@ -1,6 +1,6 @@
 from app.data_processing.stock_analysis import get_stock_summary
 from app.data_retrieval.sec_scraper import SECScraper
-from app.data_retrieval.stock_api import fetch_stock_data
+from app.data_retrieval.stock_api import fetch_stock_data, fetch_income_statement, fetch_balance_sheet, fetch_cash_flow_statement
 from app.models.stock import Stock
 import logging
 
@@ -65,26 +65,37 @@ class StockDataManager:
             logging.error(f"Unexpected error getting full {filing_type} report for stock {symbol}: {str(e)}")
             return {"error": "An unexpected error occurred"}
 
-    def get_financial_statement(self, symbol, statement_type):
+    def get_financial_statement(self, symbol, statement_type, years=5):
         try:
-            logging.info(f"Received request for {statement_type} of {symbol}")
+            logging.info(f"Received request for {statement_type} of {symbol} for the last {years} years")
             stock = fetch_stock_data(symbol)
             if stock:
-                statement = getattr(stock, f"{statement_type}s", None)
+                if statement_type == 'income_statement':
+                    statement = fetch_income_statement(symbol, years)
+                elif statement_type == 'balance_sheet':
+                    statement = fetch_balance_sheet(symbol, years)
+                elif statement_type == 'cash_flow_statement':
+                    statement = fetch_cash_flow_statement(symbol, years)
+                else:
+                    return {"error": f"Invalid statement type: {statement_type}"}
+
                 if statement:
                     statement_data = [stmt.to_mongo().to_dict() for stmt in statement]
                     for stmt in statement_data:
                         for key in ['date', 'fillingDate', 'acceptedDate']:
-                            if key in stmt:
+                            if key in stmt and stmt[key]:
                                 stmt[key] = stmt[key].isoformat()
                     logging.info(f"Successfully retrieved {statement_type} for {symbol}")
                     return statement_data
-            logging.warning(f"{statement_type.capitalize()} not found for {symbol}")
-            return {"error": f"{statement_type.capitalize()} not found or unable to retrieve data"}
+                else:
+                    logging.warning(f"{statement_type.capitalize()} not found for {symbol}")
+                    return {"error": f"{statement_type.capitalize()} not found or unable to retrieve data"}
+            else:
+                logging.warning(f"Stock data not found for {symbol}")
+                return {"error": f"Stock data not found for {symbol}"}
         except Exception as e:
             logging.error(f"Unexpected error getting {statement_type} for stock {symbol}: {str(e)}")
             return {"error": "An unexpected error occurred"}
-
     def get_financial_metrics(self, symbol):
         try:
             logging.info(f"Received request for financial metrics of {symbol}")

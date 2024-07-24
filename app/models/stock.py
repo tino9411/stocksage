@@ -150,7 +150,7 @@ class CashFlowStatement(EmbeddedDocument):
     freeCashFlow = FloatField()
 
 class FinancialMetrics(EmbeddedDocument):
-    date = DateTimeField(required=True)
+    date = DateTimeField(required=True, default=timezone.utc)
     calendarYear = StringField(required=True)
     period = StringField(required=True)
     revenuePerShare = FloatField()
