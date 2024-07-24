@@ -1,11 +1,11 @@
-import yfinance as yf
-from app.models.stock import Stock, HistoricalData, FinancialStatement, BalanceSheet, CashFlowStatement, FinancialMetrics
+from app.models.stock import Stock, HistoricalData, FinancialStatement, BalanceSheet, CashFlowStatement, FinancialMetrics, RealTimeQuote
 from datetime import datetime, timezone, timedelta
 import logging
 import requests
 import os
 from dotenv import load_dotenv
 from mongoengine.errors import ValidationError
+import yfinance as yf
 
 load_dotenv()
 
@@ -16,43 +16,46 @@ FMP_BASE_URL = "https://financialmodelingprep.com/api/v3"
 
 def fetch_stock_data(symbol):
     try:
-        stock = yf.Ticker(symbol)
-        info = stock.info
-        
-        logging.debug(f"Raw data from yfinance for {symbol}: {info}")
-        
-        stock_doc = Stock.objects(symbol=symbol).first()
-        if not stock_doc:
-            stock_doc = Stock(symbol=symbol)
-        
-        stock_doc.company_name = info.get('longName', '') or info.get('shortName', '')
-        stock_doc.sector = info.get('sector', '')
-        stock_doc.industry = info.get('industry', '')
-        
-        # Fallback mechanisms for current price
-        current_price = info.get('currentPrice') or info.get('regularMarketPrice') or info.get('previousClose')
-        
-        stock_doc.current_data = {
-            'price': current_price,
-            'volume': info.get('volume') or info.get('regularMarketVolume'),
-            'average_volume': info.get('averageVolume') or info.get('averageDailyVolume10Day'),
-            'market_cap': info.get('marketCap'),
-            'pe_ratio': info.get('trailingPE') or info.get('forwardPE'),
-            'forward_pe': info.get('forwardPE'),
-            'dividend_yield': info.get('dividendYield'),
-            '52_week_high': info.get('fiftyTwoWeekHigh'),
-            '52_week_low': info.get('fiftyTwoWeekLow'),
-            'beta': info.get('beta'),
-            'eps': info.get('trailingEps') or info.get('forwardEps'),
-        }
-        
+        # Fetch company profile from FMP
+        profile_url = f"{FMP_BASE_URL}/profile/{symbol}?apikey={FMP_API_KEY}"
+        profile_response = requests.get(profile_url)
+        profile_response.raise_for_status()
+        profile_data = profile_response.json()
+
+        if not profile_data:
+            logging.warning(f"No profile data found for symbol {symbol}")
+            return None
+
+        company_data = profile_data[0]  # The API returns a list with one item
+
+        # Fetch real-time quote
+        real_time_quote = fetch_real_time_quote(symbol)
+
+        # Fetch historical data from yfinance
+        yf_stock = yf.Ticker(symbol)
         end_date = datetime.now()
         start_date = end_date - timedelta(days=365)
-        hist = stock.history(start=start_date, end=end_date)
-        
-        stock_doc.historical_data = [
+        hist = yf_stock.history(start=start_date, end=end_date)
+
+        stock = Stock.objects(symbol=symbol).first()
+        if not stock:
+            stock = Stock(symbol=symbol)
+
+        # Update fields from company profile
+        for key, value in company_data.items():
+            if hasattr(stock, key):
+                setattr(stock, key, value)
+
+        # Update real-time quote
+        if real_time_quote:
+            stock.real_time_quote = real_time_quote
+        else:
+            logging.warning(f"No real-time quote data available for {symbol}")
+
+        # Update historical data
+        stock.historical_data = [
             HistoricalData(
-                date=date.to_pydatetime(),
+                date=date.to_pydatetime().replace(tzinfo=timezone.utc),
                 open=float(row['Open']),
                 high=float(row['High']),
                 low=float(row['Low']),
@@ -60,69 +63,99 @@ def fetch_stock_data(symbol):
                 volume=int(row['Volume'])
             ) for date, row in hist.iterrows()
         ]
-        
-        stock_doc.financial_ratios = {
-            'return_on_equity': info.get('returnOnEquity'),
-            'return_on_assets': info.get('returnOnAssets'),
-            'profit_margin': info.get('profitMargins'),
-            'operating_margin': info.get('operatingMargins'),
-            'ebitda': info.get('ebitda'),
-            'price_to_book': info.get('priceToBook'),
-            'price_to_sales': info.get('priceToSalesTrailing12Months'),
-            'peg_ratio': info.get('pegRatio'),
-            'debt_to_equity': info.get('debtToEquity'),
-            'current_ratio': info.get('currentRatio'),
-            'quick_ratio': info.get('quickRatio'),
-            'free_cash_flow': info.get('freeCashflow'),
-        }
-        
-        # Calculate growth rates if possible
-        if 'earningsGrowth' in info or 'revenueGrowth' in info:
-            stock_doc.growth_rates = {
-                'earnings_growth': info.get('earningsGrowth'),
-                'revenue_growth': info.get('revenueGrowth'),
-            }
-        
-       # Fetch and store income statement data
-        income_statement = fetch_income_statement(symbol)
-        if income_statement:
-            stock_doc.income_statement = income_statement
 
-        stock_doc.last_updated = datetime.now(timezone.utc)
-        stock_doc.save()
-        
-         # Fetch and store balance sheet data
-        balance_sheets = fetch_balance_sheet(symbol)
-        if balance_sheets:
-            stock_doc.balance_sheets = balance_sheets
+        stock.last_updated = datetime.now(timezone.utc)
 
-        stock_doc.last_updated = datetime.now(timezone.utc)
-        stock_doc.save()
-        
-        # Fetch and store cash flow statement data
-        cash_flow_statements = fetch_cash_flow_statement(symbol)
-        if cash_flow_statements:
-            stock_doc.cash_flow_statements = cash_flow_statements
-
-        stock_doc.last_updated = datetime.now(timezone.utc)
-        stock_doc.save()
-        
-        # Fetch and store financial metrics
-        financial_metrics = fetch_financial_metrics(symbol)
-        if financial_metrics:
-            stock_doc.financial_metrics = financial_metrics
-
-        stock_doc.last_updated = datetime.now(timezone.utc)
-        stock_doc.save()
+        try:
+            stock.save()
+            logging.info(f"Successfully saved data for {symbol}")
+        except ValidationError as ve:
+            logging.error(f"Validation error when saving data for {symbol}: {str(ve)}")
+            return None
 
         logging.info(f"Successfully updated data for {symbol}")
-        logging.debug(f"Processed data for {symbol}: {stock_doc.to_json()}")
-        return stock_doc
-    
-    except Exception as e:
-        logging.error(f"Error fetching data for {symbol}: {str(e)}", exc_info=True)
-        raise
+        return stock
 
+    except requests.RequestException as e:
+        logging.error(f"Error fetching data for {symbol}: {str(e)}")
+        return None
+    except Exception as e:
+        logging.error(f"Unexpected error fetching data for {symbol}: {str(e)}", exc_info=True)
+        return None
+
+def fetch_real_time_quote(symbol):
+    try:
+        url = f"{FMP_BASE_URL}/quote/{symbol}?apikey={FMP_API_KEY}"
+        response = requests.get(url)
+        response.raise_for_status()
+        data = response.json()
+
+        logging.debug(f"Raw real-time quote data for {symbol}: {data}")
+
+        if not data:
+            logging.warning(f"Empty response when fetching real-time quote for {symbol}")
+            return None
+
+        quote_data = data[0]  # The API returns a list with one item
+
+        # Function to safely convert to float
+        def safe_float(value):
+            try:
+                return float(value) if value is not None else None
+            except ValueError:
+                logging.warning(f"Could not convert {value} to float")
+                return None
+
+        # Function to safely convert to int
+        def safe_int(value):
+            try:
+                return int(value) if value is not None else None
+            except ValueError:
+                logging.warning(f"Could not convert {value} to int")
+                return None
+
+        # Function to safely parse datetime
+        def safe_datetime(value):
+            if value is None:
+                return None
+            try:
+                if isinstance(value, str):
+                    return datetime.strptime(value, '%Y-%m-%dT%H:%M:%S.%f%z')
+                elif isinstance(value, (int, float)):
+                    return datetime.fromtimestamp(value / 1000, tz=timezone.utc)
+            except ValueError as e:
+                logging.warning(f"Could not parse datetime {value}: {e}")
+            return None
+
+        return RealTimeQuote(
+            price=safe_float(quote_data.get('price')),
+            changesPercentage=safe_float(quote_data.get('changesPercentage')),
+            change=safe_float(quote_data.get('change')),
+            dayLow=safe_float(quote_data.get('dayLow')),
+            dayHigh=safe_float(quote_data.get('dayHigh')),
+            yearHigh=safe_float(quote_data.get('yearHigh')),
+            yearLow=safe_float(quote_data.get('yearLow')),
+            marketCap=safe_float(quote_data.get('marketCap')),
+            priceAvg50=safe_float(quote_data.get('priceAvg50')),
+            priceAvg200=safe_float(quote_data.get('priceAvg200')),
+            volume=safe_int(quote_data.get('volume')),
+            avgVolume=safe_int(quote_data.get('avgVolume')),
+            open=safe_float(quote_data.get('open')),
+            previousClose=safe_float(quote_data.get('previousClose')),
+            eps=safe_float(quote_data.get('eps')),
+            pe=safe_float(quote_data.get('pe')),
+            earningsAnnouncement=safe_datetime(quote_data.get('earningsAnnouncement')),
+            sharesOutstanding=safe_float(quote_data.get('sharesOutstanding')),
+            timestamp=safe_datetime(quote_data.get('timestamp'))
+        )
+
+    except requests.RequestException as e:
+        logging.error(f"Request exception when fetching real-time quote for {symbol}: {str(e)}")
+        return None
+    except Exception as e:
+        logging.error(f"Unexpected error fetching real-time quote for {symbol}: {str(e)}", exc_info=True)
+        return None
+        
 def fetch_income_statement(symbol, years=5, force_refresh=False):
     try:
         stock = Stock.objects(symbol=symbol).first()

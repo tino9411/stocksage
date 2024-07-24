@@ -10,8 +10,51 @@ class StockDataManager:
 
     def get_stock_summary(self, symbol):
         try:
-            summary = get_stock_summary(symbol)
-            if summary:
+            stock = fetch_stock_data(symbol)
+            if stock:
+                summary = {
+                    "symbol": stock.symbol,
+                    "companyName": stock.companyName,
+                    "currency": stock.currency,
+                    "exchange": stock.exchange,
+                    "industry": stock.industry,
+                    "sector": stock.sector,
+                    "description": stock.description,
+                    "website": stock.website,
+                    "ceo": stock.ceo,
+                    "image": stock.image,
+                    "ipoDate": stock.ipoDate,
+                    "isActivelyTrading": stock.isActivelyTrading,
+                    "last_updated": stock.last_updated.isoformat()
+                }
+
+                if stock.real_time_quote:
+                    real_time_data = {
+                        "price": stock.real_time_quote.price,
+                        "changesPercentage": stock.real_time_quote.changesPercentage,
+                        "change": stock.real_time_quote.change,
+                        "dayLow": stock.real_time_quote.dayLow,
+                        "dayHigh": stock.real_time_quote.dayHigh,
+                        "yearHigh": stock.real_time_quote.yearHigh,
+                        "yearLow": stock.real_time_quote.yearLow,
+                        "marketCap": stock.real_time_quote.marketCap,
+                        "priceAvg50": stock.real_time_quote.priceAvg50,
+                        "priceAvg200": stock.real_time_quote.priceAvg200,
+                        "volume": stock.real_time_quote.volume,
+                        "avgVolume": stock.real_time_quote.avgVolume,
+                        "open": stock.real_time_quote.open,
+                        "previousClose": stock.real_time_quote.previousClose,
+                        "eps": stock.real_time_quote.eps,
+                        "pe": stock.real_time_quote.pe,
+                        "earningsAnnouncement": stock.real_time_quote.earningsAnnouncement.isoformat() if stock.real_time_quote.earningsAnnouncement else None,
+                        "sharesOutstanding": stock.real_time_quote.sharesOutstanding,
+                        "timestamp": stock.real_time_quote.timestamp.isoformat() if stock.real_time_quote.timestamp else None,
+                    }
+                    summary.update(real_time_data)
+                else:
+                    logging.warning(f"Real-time quote missing for {symbol}")
+                    summary["real_time_quote_missing"] = True
+
                 logging.info(f"Successfully retrieved summary for {symbol}")
                 return summary
             else:
