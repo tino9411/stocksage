@@ -225,36 +225,54 @@ def fetch_income_statement(symbol, years=5, force_refresh=False):
         logging.error(f"Unexpected error fetching income statement data for {symbol}: {str(e)}")
         return None
     
-def fetch_balance_sheet(symbol):
+def fetch_balance_sheet(symbol, years=5, force_refresh=False):
     try:
         stock = Stock.objects(symbol=symbol).first()
         
-        # Check if we already have a recent balance sheet (e.g., less than 3 months old)
-        if stock and stock.balance_sheets:
-            latest_balance_sheet = stock.balance_sheets[0]
-            if (datetime.now(timezone.utc) - latest_balance_sheet.date).days < 90:
-                logging.info(f"Using cached balance sheet for {symbol}")
+        # Check if we already have recent balance sheets (e.g., less than 1 day old)
+        if not force_refresh and stock and stock.balance_sheets:
+            latest_statement = stock.balance_sheets[0]
+            if (datetime.now(timezone.utc) - latest_statement.date.replace(tzinfo=timezone.utc)).days < 1:
+                logging.info(f"Using cached balance sheets for {symbol}")
                 return stock.balance_sheets
 
         # If no recent data, fetch from FMP API
-        url = f"{FMP_BASE_URL}/balance-sheet-statement/{symbol}?period=annual&apikey={FMP_API_KEY}"
-        response = requests.get(url)
-        response.raise_for_status()
-        data = response.json()
+        end_date = datetime.now(timezone.utc)
+        start_date = end_date - timedelta(days=years * 365)
+        
+        annual_url = f"{FMP_BASE_URL}/balance-sheet-statement/{symbol}?period=annual&limit={years}&apikey={FMP_API_KEY}"
+        quarterly_url = f"{FMP_BASE_URL}/balance-sheet-statement/{symbol}?period=quarter&limit={years * 4}&apikey={FMP_API_KEY}"
 
-        if not data:
+        annual_response = requests.get(annual_url)
+        annual_response.raise_for_status()
+        annual_data = annual_response.json()
+
+        try:
+            quarterly_response = requests.get(quarterly_url)
+            quarterly_response.raise_for_status()
+            quarterly_data = quarterly_response.json()
+        except requests.RequestException as e:
+            logging.warning(f"Failed to fetch quarterly data for {symbol}: {str(e)}")
+            quarterly_data = []
+
+        if not annual_data and not quarterly_data:
             logging.warning(f"No balance sheet data found for {symbol}")
             return None
 
         balance_sheets = []
-        for statement in data:
+        
+        for statement in annual_data + quarterly_data:
+            statement_date = datetime.strptime(statement['date'], '%Y-%m-%d').replace(tzinfo=timezone.utc)
+            if statement_date < start_date:
+                continue
+            
             balance_sheet = BalanceSheet(
-                date=datetime.strptime(statement['date'], '%Y-%m-%d'),
+                date=statement_date,
                 symbol=statement['symbol'],
                 reportedCurrency=statement['reportedCurrency'],
                 cik=statement['cik'],
-                fillingDate=datetime.strptime(statement['fillingDate'], '%Y-%m-%d'),
-                acceptedDate=datetime.strptime(statement['acceptedDate'], '%Y-%m-%d %H:%M:%S'),
+                fillingDate=datetime.strptime(statement['fillingDate'], '%Y-%m-%d').replace(tzinfo=timezone.utc),
+                acceptedDate=datetime.strptime(statement['acceptedDate'], '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc),
                 calendarYear=statement['calendarYear'],
                 period=statement['period'],
                 cashAndCashEquivalents=statement['cashAndCashEquivalents'],
@@ -304,7 +322,18 @@ def fetch_balance_sheet(symbol):
             )
             balance_sheets.append(balance_sheet)
 
-        logging.info(f"Successfully fetched balance sheet data for {symbol}")
+        # Sort balance sheets by date (newest first)
+        balance_sheets.sort(key=lambda x: x.date, reverse=True)
+
+        # Update the stock object with new balance sheets
+        if stock:
+            stock.balance_sheets = balance_sheets
+            stock.save()
+        else:
+            stock = Stock(symbol=symbol, balance_sheets=balance_sheets)
+            stock.save()
+
+        logging.info(f"Successfully fetched and saved balance sheet data for {symbol}")
         return balance_sheets
 
     except requests.RequestException as e:
@@ -313,7 +342,7 @@ def fetch_balance_sheet(symbol):
     except Exception as e:
         logging.error(f"Unexpected error fetching balance sheet data for {symbol}: {str(e)}")
         return None
-
+    
 def fetch_cash_flow_statement(symbol):
     try:
         stock = Stock.objects(symbol=symbol).first()

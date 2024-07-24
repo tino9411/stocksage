@@ -96,6 +96,7 @@ class StockDataManager:
         except Exception as e:
             logging.error(f"Unexpected error getting {statement_type} for stock {symbol}: {str(e)}")
             return {"error": "An unexpected error occurred"}
+        
     def get_financial_metrics(self, symbol):
         try:
             logging.info(f"Received request for financial metrics of {symbol}")
