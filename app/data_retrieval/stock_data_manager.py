@@ -23,7 +23,6 @@ class StockDataManager:
                     "description": stock.description,
                     "website": stock.website,
                     "ceo": stock.ceo,
-                    "image": stock.image,
                     "ipoDate": stock.ipoDate,
                     "isActivelyTrading": stock.isActivelyTrading,
                     "last_updated": stock.last_updated.isoformat()
